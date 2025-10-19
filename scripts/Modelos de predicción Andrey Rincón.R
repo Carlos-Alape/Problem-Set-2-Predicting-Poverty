@@ -207,3 +207,56 @@ write.csv(submit, filename, row.names = FALSE)
 
 prop.table(table(submit$pobre))
 
+
+#BAGGING
+
+for (v in factor_vars) {
+  train[[v]] <- as.factor(train[[v]])
+  test[[v]] <- factor(test[[v]], levels = levels(train[[v]]))
+}
+
+# Control de validación cruzada con sampling
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,          
+  classProbs = TRUE,
+  verboseIter = TRUE,
+  savePredictions = "final",
+  sampling = "down",
+  allowParallel = TRUE  
+)
+
+set.seed(2025)
+modelo_bagging_caret <- train(
+  pobre ~ nper + busca_trabajo + desempleado + amo_casa + 
+    inactivo + ocupado + primaria + secundaria + media + edad + 
+    menores_edad + rural + mujer + estudiante + adulto_mayor + superior,
+  data = train,
+  method = "treebag",
+  trControl = ctrl,
+  metric = "ROC",
+  nbagg = 100,          
+  control = rpart.control(
+    minsplit = 50,              
+    minbucket = 20,   
+    cp = 0.001,        
+    maxdepth = 15     
+  )
+)
+
+print(modelo_bagging_caret)
+
+# Aplicamos predicción a testing 
+predicciones_clase_caret <- predict(modelo_bagging_caret, newdata = test)
+predicciones_prob_caret <- predict(modelo_bagging_caret, newdata = test, type = "prob")
+
+# Convertir a 0/1 la variable pobre
+test_submission_caret <- test %>%
+  mutate(pobre = ifelse(predicciones_clase_caret == "Yes", 1, 0))
+
+# Crear submission
+submit_caret <- test_submission_caret %>% select(id, pobre)
+write.csv(submit_caret, "bagging_caret.csv", row.names = FALSE)
+
+prop.table(table(submit_caret$pobre))
+
