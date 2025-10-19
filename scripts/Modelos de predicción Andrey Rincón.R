@@ -107,3 +107,46 @@ filename <- paste0(
 
 write.csv(submission, filename, row.names = FALSE)
 prop.table(table(submission$pobre))
+
+
+
+#  MODELO LOGIT 
+
+# Establecemos la grilla 
+lambda_grid <- 10^seq(-4, 0.01, length = 10) 
+
+# Construimos modelo de predicción
+ridge<- train(
+  pobre ~ nper + busca_trabajo + desempleado + amo_casa + 
+    inactivo + ocupado + primaria + secundaria + media + edad + 
+    menores_edad + rural + mujer + estudiante + 
+    adulto_mayor + superior,
+  data = train, 
+  method = "glmnet",
+  family = "binomial", 
+  metric = "Accuracy",
+  trControl = ctrl,
+  tuneGrid = expand.grid(alpha = 1,lambda=lambda_grid), 
+  preProcess = c("center", "scale")
+)
+
+#Aplicamos el modelos a testinbg 
+test$pobre <- predict(ridge, test)
+
+
+pred_logit <- predict(ridge, newdata = test, type = "raw")
+
+
+#Cambiamos  las categorías a 0 y 1. 
+test<- test%>% 
+  mutate(pobre =ifelse(pobre=="Yes",1,0))
+head(test %>% select(id,pobre))
+
+
+# Creamos el archivo de subida a kaggle 
+submit <- test %>% select(id, pobre)
+filename <- "submission_logitrigde.csv"
+
+# Guardar el archivo
+write.csv(submit, filename, row.names = FALSE)
+prop.table(table(submit$pobre))
