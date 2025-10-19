@@ -150,3 +150,60 @@ filename <- "submission_logitrigde.csv"
 # Guardar el archivo
 write.csv(submit, filename, row.names = FALSE)
 prop.table(table(submit$pobre))
+
+
+
+# ARBOLES
+
+# Construimos nuestro modelo 
+
+fiveStats <- function(...) {
+  c(twoClassSummary(...), defaultSummary(...))
+}
+
+
+
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,  
+  summaryFunction = fiveStats,
+  classProbs = TRUE,
+  verboseIter = TRUE,  
+  savePredictions = "final",
+  sampling = "down" # balancea las clases, puedes probar "up" o "smote"
+)
+
+grid <- expand.grid(cp = seq(0, 0.05, by = 0.005))
+
+set.seed(2025)
+modelo_cart <- train(
+  pobre ~ nper + busca_trabajo + desempleado + amo_casa + 
+    inactivo + ocupado + primaria + secundaria + media + edad + 
+    menores_edad + rural + mujer + estudiante + adulto_mayor + superior,
+  data = train,
+  method = "rpart",
+  metric = "ROC",
+  trControl = ctrl,
+  tuneGrid = grid
+)
+
+
+print(modelo_cart)
+
+#Aplicamos a testing
+predicciones_clase <- predict(modelo_cart, newdata = test, type = "raw")
+predicciones_prob <- predict(modelo_cart, newdata = test, type = "prob")
+
+# Convertir predicciones a formato 0 y 1
+
+test_submission <- test %>%
+  mutate(pobre = ifelse(predicciones_clase == "Yes", 1, 0))
+
+# Crear archivo de subida a Kaggle
+submit <- test_submission %>% select(id, pobre)
+filename <- "Arbol.csv"
+write.csv(submit, filename, row.names = FALSE)
+
+
+prop.table(table(submit$pobre))
+
