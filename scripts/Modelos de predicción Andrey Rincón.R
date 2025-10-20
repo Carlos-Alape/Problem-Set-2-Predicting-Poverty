@@ -34,6 +34,11 @@ for (v in factor_vars) {
 
 # MODELO ELASTIC NET 
 
+fiveStats <- function(...) {
+  c(twoClassSummary(...), defaultSummary(...))
+}
+
+
 tune_grid <- expand.grid(
   alpha = seq(0, 1, by = 0.2),  
   lambda = exp(seq(log(1e-6),   
@@ -71,6 +76,7 @@ model_elastic_fixed <- train(
 print(model_elastic_fixed$bestTune)
 
 
+
 # Probamos predicciones en test
 pred_fixed <- predict(model_elastic_fixed, newdata = test, type = "raw")
 cat("\nDistribución de predicciones corregidas:\n")
@@ -87,16 +93,32 @@ submission <- data.frame(
   pobre = ifelse(pred_fixed == "Yes", 1, 0)
 )
 
-# Creamos archivo para subir
-lambda_str <- gsub("\\.", "_", sprintf("%.6f", model_elastic_fixed$bestTune$lambda))
-alpha_str  <- gsub("\\.", "_", sprintf("%.2f", model_elastic_fixed$bestTune$alpha))
-
 
 best_result <- model_elastic_fixed$results[
   model_elastic_fixed$results$alpha == model_elastic_fixed$bestTune$alpha &
     model_elastic_fixed$results$lambda == model_elastic_fixed$bestTune$lambda, 
 ]
-f1_str <- gsub("\\.", "_", sprintf("%.4f", best_result$F))
+best_result
+
+roc_obj_train <- roc(train$pobre, predict(model_elastic_fixed, newdata = train, type = "prob")[, "Yes"], levels = c("No", "Yes"), direction = "<")
+plot(roc_obj_train, main = "Curva ROC - Elastic Net Fixed  (Entrenamiento)", col = "blue")
+text(x = 0.5, y = 0.4, labels = paste("AUC =", round(auc_train, 4)), cex = 1.5)
+auc_train <- auc(roc_obj_train)
+cat("AUC en entrenamiento:", auc_train, "\n")
+
+
+train_pred <- predict(model_elastic_fixed, newdata = train, type = "raw")
+f1_train <- F1_Score(y_true = train$pobre, y_pred = train_pred, positive = "Yes")
+cat("F1 score en entrenamiento:", f1_train, "\n")
+
+
+# Creamos archivo para subir
+lambda_str <- gsub("\\.", "_", sprintf("%.6f", model_elastic_fixed$bestTune$lambda))
+alpha_str  <- gsub("\\.", "_", sprintf("%.2f", model_elastic_fixed$bestTune$alpha))
+
+
+
+
 
 filename <- paste0(
   "ElasticNet_alpha", alpha_str,
@@ -155,13 +177,9 @@ prop.table(table(submit$pobre))
 
 # ARBOLES
 
-# Construimos nuestro modelo 
-
 fiveStats <- function(...) {
   c(twoClassSummary(...), defaultSummary(...))
 }
-
-
 
 ctrl <- trainControl(
   method = "cv",
@@ -169,12 +187,13 @@ ctrl <- trainControl(
   summaryFunction = fiveStats,
   classProbs = TRUE,
   verboseIter = TRUE,  
-  savePredictions = "final",
-  sampling = "down" # balancea las clases, puedes probar "up" o "smote"
+  savePredictions = "final",  
+  sampling = "down" 
 )
 
 grid <- expand.grid(cp = seq(0, 0.05, by = 0.005))
 
+# Modelo 
 set.seed(2025)
 modelo_cart <- train(
   pobre ~ nper + busca_trabajo + desempleado + amo_casa + 
@@ -187,12 +206,35 @@ modelo_cart <- train(
   tuneGrid = grid
 )
 
-
 print(modelo_cart)
 
-#Aplicamos a testing
-predicciones_clase <- predict(modelo_cart, newdata = test, type = "raw")
-predicciones_prob <- predict(modelo_cart, newdata = test, type = "prob")
+modelo_cart$bestTune
+
+# Metricas 
+
+# Extraer resultados del mejor modelo
+best_results <- modelo_cart$results[which.max(modelo_cart$results$ROC), ]
+best_results
+
+# Metricas en conjunto de entrenamiento
+
+# Predicciones en train
+pred_train_clase <- predict(modelo_cart, newdata = train, type = "raw")
+pred_train_prob <- predict(modelo_cart, newdata = train, type = "prob")
+
+# Matriz de confusión
+conf_matrix_train <- confusionMatrix(pred_train_clase, train$pobre, positive = "Yes")
+print(conf_matrix_train)
+
+# ROC y AUC en entrenbamiento 
+train$pobre_num <- as.numeric(train$pobre == "Yes")
+roc_train <- roc(train$pobre_num, pred_train_prob$Yes)
+auc_train <- auc(roc_train)
+
+# curva ROC
+plot(roc_train, main = "Curva ROC - Modelo Árbol (Entrenamiento)", 
+     col = "blue", lwd = 2)
+text(0.5, 0.3, paste("AUC =", round(auc_train, 4)), cex = 1.2)
 
 # Convertir predicciones a formato 0 y 1
 
@@ -206,6 +248,7 @@ write.csv(submit, filename, row.names = FALSE)
 
 
 prop.table(table(submit$pobre))
+
 
 
 #BAGGING
